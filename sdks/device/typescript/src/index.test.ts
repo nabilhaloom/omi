@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { BleAudioCodec, mapCodecId } from './index.ts';
+import {
+  BleAudioCodec,
+  mapCodecId,
+  OmiDeviceSession,
+  type AudioPacketHandler,
+  type BleTransport,
+} from './index.ts';
 
 // Numeric enum members are plain numbers at runtime, so `mapCodecId(21) === 21`
 // whether or not the codec is named. The checkable contract is the reverse map.
@@ -25,5 +31,47 @@ describe('mapCodecId', () => {
   test('passes an unknown id through unnamed', () => {
     expect(mapCodecId(99)).toBe(99);
     expect(BleAudioCodec[99]).toBeUndefined();
+  });
+});
+
+class ScriptedTransport implements BleTransport {
+  private handler: AudioPacketHandler | undefined;
+
+  startAudioNotifications(handler: AudioPacketHandler): void {
+    this.handler = handler;
+  }
+
+  emit(packet: Uint8Array): void {
+    this.handler?.(packet);
+  }
+}
+
+describe('listenPayload', () => {
+  test('drops a packet that is only the 3-byte header', async () => {
+    const transport = new ScriptedTransport();
+    const session = new OmiDeviceSession(transport);
+    const payloads: number[][] = [];
+    await session.listenPayload((payload) => {
+      payloads.push([...payload]);
+    });
+
+    transport.emit(new Uint8Array([1, 2, 3]));
+    transport.emit(new Uint8Array([0]));
+    transport.emit(new Uint8Array([0, 0, 0, 9, 8]));
+
+    expect(payloads).toEqual([[9, 8]]);
+  });
+
+  test('listen still forwards the raw packet, header included', async () => {
+    const transport = new ScriptedTransport();
+    const session = new OmiDeviceSession(transport);
+    const packets: number[][] = [];
+    await session.listen((packet) => {
+      packets.push([...packet]);
+    });
+
+    transport.emit(new Uint8Array([1, 2, 3]));
+
+    expect(packets).toEqual([[1, 2, 3]]);
   });
 });

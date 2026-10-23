@@ -54,9 +54,16 @@ export class OmiDeviceSession {
     await this.transport.startAudioNotifications(handler);
   }
 
+  /**
+   * Codec payload after the 3-byte header. A packet that is only a header, or
+   * shorter, is dropped — the same rule as Python `listen_payload`, Go
+   * `ListenPayload`, Dart `audioPayloads`, and Rust `listen_payload`.
+   */
   async listenPayload(handler: AudioPacketHandler): Promise<void> {
     await this.transport.startAudioNotifications((packet) => {
-      handler(stripPacketHeader(packet));
+      const payload = stripPacketHeader(packet);
+      if (payload.byteLength === 0) return;
+      handler(payload);
     });
   }
 }
